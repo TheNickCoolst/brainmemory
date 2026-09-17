@@ -1,0 +1,70 @@
+brain:
+  neurons: 10000
+  seed: 42
+  inhibitory_fraction: 0.18
+
+hippocampus:
+  fraction: 0.20
+  learning_rate: 0.18
+  index_size: 72
+
+cortex:
+  fraction: 0.70
+  learning_rate: 0.02
+
+association:
+  fraction: 0.10
+  learning_rate: 0.05
+
+synapses:
+  avg_connections: 64
+  w_init_mean: 0.04
+  w_init_std: 0.02
+  w_max: 1.0
+  w_min: 0.0
+  inhibitory_strength: 0.25
+  max_degree: 480
+
+neuron:
+  model: lif
+  tau_mem: 20.0
+  v_rest: 0.0
+  v_threshold: 1.0
+  v_reset: 0.0
+  refractory_steps: 2
+  dt: 1.0
+
+memory:
+  bits_per_concept: 40
+  sparsity: 0.02
+  bind_degree: 22
+  grow_probability: 0.28
+  hebb_steps: 6
+  retrieve_reconsolidates: true
+
+recall:
+  steps: 10
+  clamp_steps: 3
+  k_wta: 700
+  decode_threshold: 0.20
+  clamp_current: 3.0
+
+sleep:
+  replay_count: 48
+  replay_steps: 6
+  downscale: 0.985
+  cortex_lr_boost: 6.0
+
+forgetting:
+  decay_rate: 0.008
+  unused_decay: 0.02
+  pruning_threshold: 0.004
+  unused_window: 30
+
+stdp:
+  enabled: true
+  a_plus: 0.04
+  a_minus: 0.042
+  tau_plus: 20.0
+  tau_minus: 20.0
+  window: 40.0
