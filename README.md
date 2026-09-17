@@ -108,6 +108,50 @@ Device selection is automatic: **CUDA → MPS → CPU**.
 
 ---
 
+## Autonomous learning
+
+The network can fetch its own sensory input, then learn by changing synapses:
+
+```text
+curiosity / seed topic
+        │
+        ▼
+   fetch (Wikipedia, local files)
+        │
+        ▼
+   novelty gate
+        │
+        ▼
+   brain.learn(...)     ← synaptic change
+        │
+        ▼
+   sleep / consolidate
+        │
+        ▼
+   weak recall → next queries
+```
+
+Fetched pages are **not** the memory. They are raw input, like vision. If you zero the weights, the foraged facts disappear.
+
+```python
+brain = Brain(BrainConfig.small())
+
+# local folder of .txt / .md files
+brain.ingest("examples/corpus")
+
+# curiosity loop: fetch, learn, sleep, chase knowledge gaps
+brain.explore("hippocampus", steps=6)
+
+print(brain.recall(["hippocampus"])["recalled_concepts"])
+```
+
+```bash
+python examples/demo_autonomous.py
+python examples/demo_autonomous.py --web hippocampus schlaf
+```
+
+`--web` uses the Wikipedia API (no key). Default language is German.
+
 ## First example
 
 ```python

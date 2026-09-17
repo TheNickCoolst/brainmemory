@@ -160,6 +160,23 @@ class Brain:
         result["text"] = text
         return result
 
+    def explore(self, topic: str, steps: int = 6, **kwargs: Any) -> dict[str, Any]:
+        """Autonomously fetch data about a topic and learn it synaptically."""
+        from brainmemory.autonomy.learner import AutonomousLearner
+
+        return AutonomousLearner(self, **kwargs).wander([topic], steps=steps)
+
+    def wander(self, seeds: Sequence[str], steps: int = 8, **kwargs: Any) -> dict[str, Any]:
+        from brainmemory.autonomy.learner import AutonomousLearner
+
+        return AutonomousLearner(self, **kwargs).wander(seeds, steps=steps)
+
+    def ingest(self, path: str | Path, **kwargs: Any) -> dict[str, Any]:
+        """Read a local file or folder and learn its contents."""
+        from brainmemory.autonomy.learner import AutonomousLearner
+
+        return AutonomousLearner(self, **kwargs).ingest_path(path)
+
     # ----------------------------------------------------------------- recall
     def recall(
         self,

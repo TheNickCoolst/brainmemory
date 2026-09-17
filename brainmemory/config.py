@@ -96,6 +96,19 @@ class STDPConfig:
 
 
 @dataclass
+class AutonomyConfig:
+    language: str = "de"
+    max_pages: int = 10
+    sleep_every: int = 3
+    min_novelty: float = 0.12
+    rate_limit_s: float = 0.8
+    follow_links: int = 3
+    max_concepts: int = 14
+    wikipedia: bool = True
+    local_dir: str | None = None
+
+
+@dataclass
 class BrainConfig:
     neurons: int = 10000
     seed: int = 42
@@ -111,6 +124,7 @@ class BrainConfig:
     sleep: SleepConfig = field(default_factory=SleepConfig)
     forgetting: ForgettingConfig = field(default_factory=ForgettingConfig)
     stdp: STDPConfig = field(default_factory=STDPConfig)
+    autonomy: AutonomyConfig = field(default_factory=AutonomyConfig)
 
     @classmethod
     def tiny(cls, seed: int = 1) -> "BrainConfig":
@@ -173,6 +187,7 @@ class BrainConfig:
         cfg.sleep = _fill(SleepConfig, raw.get("sleep"))
         cfg.forgetting = _fill(ForgettingConfig, raw.get("forgetting"))
         cfg.stdp = _fill(STDPConfig, raw.get("stdp"))
+        cfg.autonomy = _fill(AutonomyConfig, raw.get("autonomy"))
         return cfg
 
     def to_dict(self) -> dict[str, Any]:

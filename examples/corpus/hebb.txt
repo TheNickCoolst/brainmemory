@@ -1,0 +1,3 @@
+Donald Hebb beschrieb, dass Verbindungen stärker werden, wenn Neuronen wiederholt gemeinsam feuern. Cells that fire together wire together.
+
+Hebbsche Plastizität ist eine Grundlage assoziativen Lernens. Wiederholung macht Erinnerungen stabiler.

@@ -68,3 +68,13 @@ stdp:
   tau_plus: 20.0
   tau_minus: 20.0
   window: 40.0
+
+autonomy:
+  language: de
+  max_pages: 10
+  sleep_every: 3
+  min_novelty: 0.12
+  rate_limit_s: 0.8
+  follow_links: 3
+  max_concepts: 14
+  wikipedia: true

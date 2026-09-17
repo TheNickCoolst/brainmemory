@@ -1,0 +1,3 @@
+Schlaf replayt wichtige Muster. Während des Schlafs werden Synapsen normalisiert und schwache Verbindungen können verschwinden.
+
+Replay überträgt wiederkehrende Struktur vom Hippocampus in den langsam lernenden Cortex. Das nennt man Konsolidierung.
