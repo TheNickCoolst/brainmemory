@@ -108,6 +108,24 @@ Device selection is automatic: **CUDA → MPS → CPU**.
 
 ---
 
+## How the model answers
+
+The brain does not chat from a document store. A question is encoded into cue neurons, the sparse net completes the pattern, and the readout names the concepts that fired.
+
+```bash
+python examples/talk.py --device mps
+python examples/talk.py "Was ist der Hippocampus?"
+```
+
+```python
+brain = Brain.live(device="mps")   # same file, GPU if available
+out = brain.ask("Was ist der Hippocampus?")
+print(out["answer"])
+print(out["recalled_concepts"], out["confidence"])
+```
+
+On Apple Silicon, **MPS is the GPU** and it shares RAM with the CPU — it is faster, not extra memory. Optional `BRAINMEMORY_SPEAK=1` lets an LLM *phrase* the recalled concepts; it must not invent facts.
+
 ## One lifelong brain
 
 Do **not** train a new network each time. Open the same brain; it keeps its synapses, grows new neurons, and learns the next batch.

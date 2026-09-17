@@ -69,8 +69,13 @@ def main() -> int:
 
     existed = dest.exists()
     device = args.device
-    if args.until_limit and not device:
-        device = "cpu"
+    if not device:
+        from brainmemory.device import select_device
+
+        device = str(select_device())
+        if args.until_limit and device == "mps":
+            # MPS shares RAM; keep default GPU, grow stays chunked in live.py
+            pass
     continuum = Continuum.open(
         path=dest,
         config=None if existed else cfg,

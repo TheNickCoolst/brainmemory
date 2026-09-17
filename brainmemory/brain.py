@@ -271,6 +271,19 @@ class Brain:
         result["extracted_concepts"] = concepts
         return result
 
+    def ask(self, question: str, language: str = "de") -> dict[str, Any]:
+        """Question → encode → neural recall → spoken answer.
+
+        Memory still comes only from synaptic completion. Phrasing is a readout.
+        """
+        from brainmemory.speak import maybe_verbalize, render_answer
+
+        rec = self.recall_text(question)
+        draft = render_answer(question, rec, language=language)
+        rec["answer"] = maybe_verbalize(question, rec, draft)
+        rec["question"] = question
+        return rec
+
     # --------------------------------------------------------- sleep / time
     def sleep(self) -> dict[str, Any]:
         return sleep_cycle(self.net, self.traces, self.config)
@@ -377,6 +390,7 @@ class Brain:
         brain.seen_docs = set(payload.get("seen_docs") or [])
         brain.seen_queries = set(payload.get("seen_queries") or [])
         brain._sync_anatomy()
+        brain.config.recall.k_wta = min(int(brain.config.recall.k_wta), 700)
         return brain
 
     @classmethod

@@ -138,8 +138,9 @@ class SparseNetwork:
         active = torch.zeros(self.n, device=self.device, dtype=torch.float32)
         if clamp.numel():
             active[clamp] = 1.0
-        accumulated = active.clone()
-        k = min(int(k_wta), max(24, int(self.n * 0.12)))
+        # Attractors stay sparse even if the brain has grown. Scaling k with N
+        # drowns old engrams in random cells.
+        k = min(max(24, int(k_wta)), 280, self.n)
         for s in range(int(steps)):
             I_syn = self.excitatory_current(active)
             if not use_hippocampus:
@@ -155,15 +156,14 @@ class SparseNetwork:
             else:
                 rel = torch.zeros_like(I_syn, dtype=torch.bool)
             winners = self.k_wta(I, k) & (rel | ((s < int(clamp_steps)) & (I > 0)))
-            if clamp.numel() and s < int(clamp_steps):
+            if clamp.numel():
                 winners[clamp] = True
             active = winners.to(dtype=torch.float32)
-            accumulated = torch.maximum(accumulated, active)
             self.state.activation = active
             self.state.v = torch.clamp(I, min=0.0)
             self.t += self.cfg.neuron.dt
-        self.state.activation = accumulated
-        return accumulated
+        # final settled state only — OR-ing every step piles noise in large nets
+        return active
 
     def bind_engram(self, neurons: np.ndarray, degree: int, weight: float, t: float) -> int:
         """Grow recurrent synapses among an ensemble (structural plasticity)."""
@@ -198,8 +198,11 @@ class SparseNetwork:
         if self.syn.nnz == 0 or neurons.size < 2:
             return 0
         ids = torch.from_numpy(np.unique(neurons.astype(np.int64))).to(self.device)
-        pre_in = torch.isin(self.syn.pre, ids)
-        post_in = torch.isin(self.syn.post, ids)
+        member = torch.zeros(self.n, dtype=torch.bool, device=self.device)
+        valid = (ids >= 0) & (ids < self.n)
+        member[ids[valid]] = True
+        pre_in = member[self.syn.pre]
+        post_in = member[self.syn.post]
         intra = pre_in & post_in & (self.syn.sign > 0)
         if not intra.any():
             return 0
@@ -345,7 +348,6 @@ class SparseNetwork:
         self.cfg.neurons = new_n
         self.syn.n = new_n
         self.syn.keys = set(int(k) for k in pack_keys(self.syn.pre, self.syn.post, new_n))
-        self.cfg.recall.k_wta = max(int(self.cfg.recall.k_wta), int(new_n * 0.06))
 
         avg = max(8, int(self.cfg.synapses.avg_connections))
         new_ids = np.arange(old_n, new_n, dtype=np.int64)
