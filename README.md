@@ -116,6 +116,7 @@ Do **not** train a new network each time. Open the same brain; it keeps its syna
 python examples/live_brain.py              # one cycle, saves ~/.brainmemory/live.pt
 python examples/live_brain.py --cycles 5   # five more cycles on the SAME brain
 python examples/live_brain.py --forever    # until Ctrl+C; saves after every cycle
+python examples/live_brain.py --until-limit  # keep growing until this machine is nearly out of RAM
 python examples/live_brain.py --status     # neurons / synapses / concepts so far
 python examples/live_brain.py --web        # also forage Wikipedia
 ```

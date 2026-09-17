@@ -31,6 +31,32 @@ def test_grow_save_load(tiny_brain, tmp_path):
     assert "konzert" in found or "cello" in found
 
 
+def test_until_limit_respects_max_cycles(tmp_path):
+    path = tmp_path / "limit.pt"
+    cfg = BrainConfig.tiny(seed=5)
+    cfg.autonomy = AutonomyConfig(
+        rate_limit_s=0.0,
+        wikipedia=False,
+        min_novelty=0.0,
+        pages_per_cycle=1,
+        grow_neurons=16,
+        grow_every_cycles=1,
+        max_neurons=5000,
+        sleep_every=99,
+    )
+    c = Continuum.open(path=path, config=cfg, senses=[FakeSense()], web=False)
+    out = c.run_until_limit(
+        seeds=["hippocampus"],
+        pages=1,
+        ram_cap_gb=1000.0,
+        ram_floor_gb=0.0,
+        max_cycles=2,
+    )
+    assert c.brain.life["cycles"] >= 1
+    assert path.exists()
+    assert c.brain.net.n >= cfg.neurons
+
+
 def test_live_continuum_same_file_grows(tmp_path):
     path = tmp_path / "live.pt"
     cfg = BrainConfig.tiny(seed=4)

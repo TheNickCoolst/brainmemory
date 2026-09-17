@@ -6,9 +6,12 @@ Open the same file every time. Do not create a new brain for each session.
 from __future__ import annotations
 
 import json
+import shutil
 import time
 from pathlib import Path
 from typing import Any, Iterable, Sequence
+
+import psutil
 
 from brainmemory.autonomy.curiosity import knowledge_gaps
 from brainmemory.autonomy.learner import AutonomousLearner
@@ -107,17 +110,140 @@ class Continuum:
         forever: bool = False,
         seeds: Iterable[str] | None = None,
         pages: int | None = None,
+        until_limit: bool = False,
+        ram_cap_gb: float | None = None,
+        ram_floor_gb: float = 2.5,
     ) -> list[dict[str, Any]]:
         seed_list = list(seeds or DEFAULT_SEEDS)
         out: list[dict[str, Any]] = []
         i = 0
         try:
+            if until_limit:
+                return self.run_until_limit(
+                    seeds=seed_list,
+                    pages=pages,
+                    ram_cap_gb=ram_cap_gb,
+                    ram_floor_gb=ram_floor_gb,
+                )
             while forever or i < int(cycles):
                 out.append(self.cycle(seed_list, pages=pages))
                 i += 1
         except KeyboardInterrupt:
             self.brain.checkpoint()
         return out
+
+    def run_until_limit(
+        self,
+        seeds: Sequence[str] | None = None,
+        pages: int | None = None,
+        ram_cap_gb: float | None = None,
+        ram_floor_gb: float = 2.5,
+        max_cycles: int = 10_000,
+    ) -> list[dict[str, Any]]:
+        """Learn and grow this same brain until RAM/disk are nearly exhausted."""
+        vm = psutil.virtual_memory()
+        total_gb = vm.total / (1024**3)
+        cap = float(ram_cap_gb) if ram_cap_gb is not None else min(total_gb * 0.62, total_gb - float(ram_floor_gb) - 1.5)
+        cap = max(1.0, cap)
+        floor = float(ram_floor_gb)
+        self.brain.config.autonomy.max_neurons = max(
+            int(self.brain.config.autonomy.max_neurons), 5_000_000
+        )
+        seed_list = list(seeds or DEFAULT_SEEDS)
+        out: list[dict[str, Any]] = []
+        print(
+            f"Limit-Lauf: RAM {total_gb:.1f} GB total, cap {cap:.1f} GB RSS, "
+            f"floor {floor:.1f} GB frei. Speichert nach jedem Zyklus.",
+            flush=True,
+        )
+        try:
+            for i in range(int(max_cycles)):
+                ram = _ram()
+                disk_free = shutil.disk_usage(str(self.brain.live_path or Path.home())).free / (1024**3)
+                reason = _limit_reason(ram, cap, floor, disk_free, self.brain.net.n, self.brain.config.autonomy.max_neurons)
+                if reason:
+                    self.brain.checkpoint()
+                    print(f"LIMIT_REACHED: {reason}", flush=True)
+                    print(
+                        f"final neurons={self.brain.net.n:,} synapses={self.brain.net.syn.nnz:,} "
+                        f"rss_gb={ram['rss_gb']:.2f} avail_gb={ram['available_gb']:.2f}",
+                        flush=True,
+                    )
+                    break
+                extra = _grow_chunk(self.brain, ram, cap)
+                self.brain.config.autonomy.grow_neurons = extra
+                try:
+                    report = self.cycle(seed_list, pages=pages or 1, grow=True)
+                except (MemoryError, RuntimeError) as exc:
+                    try:
+                        self.brain.checkpoint()
+                    except Exception:
+                        pass
+                    print(f"LIMIT_REACHED: allocation_failed {type(exc).__name__}: {exc}", flush=True)
+                    break
+                ram2 = _ram()
+                report["rss_gb"] = ram2["rss_gb"]
+                report["available_gb"] = ram2["available_gb"]
+                report["ram_cap_gb"] = cap
+                out.append(report)
+                print(
+                    f"Zyklus {report['cycle']}: N {report['neurons']:,}  syn {report['synapses']:,}  "
+                    f"konzepte {report['concepts']}  +{report['grown']}N  "
+                    f"rss {ram2['rss_gb']:.2f}/{cap:.1f} GB  frei {ram2['available_gb']:.2f} GB",
+                    flush=True,
+                )
+            else:
+                self.brain.checkpoint()
+                print("LIMIT_REACHED: max_cycles", flush=True)
+        except KeyboardInterrupt:
+            self.brain.checkpoint()
+            print("LIMIT_REACHED: interrupted_saved", flush=True)
+        return out
+
+
+def _ram() -> dict[str, float]:
+    vm = psutil.virtual_memory()
+    rss = psutil.Process().memory_info().rss
+    return {
+        "total_gb": vm.total / (1024**3),
+        "available_gb": vm.available / (1024**3),
+        "percent": float(vm.percent),
+        "rss_gb": rss / (1024**3),
+        "rss_bytes": float(rss),
+    }
+
+
+def _limit_reason(
+    ram: dict[str, float],
+    cap: float,
+    floor: float,
+    disk_free_gb: float,
+    n: int,
+    max_n: int,
+) -> str | None:
+    if ram["rss_gb"] >= cap:
+        return f"rss {ram['rss_gb']:.2f} GB >= cap {cap:.1f} GB"
+    if ram["available_gb"] <= floor:
+        return f"only {ram['available_gb']:.2f} GB free (floor {floor:.1f})"
+    if disk_free_gb < 4.0:
+        return f"disk free {disk_free_gb:.1f} GB < 4 GB"
+    if n >= int(max_n):
+        return f"max_neurons {max_n:,}"
+    return None
+
+
+def _grow_chunk(brain: Brain, ram: dict[str, float], cap: float) -> int:
+    n = max(1, brain.net.n)
+    per = ram["rss_bytes"] / n
+    per = max(per, 4000.0)
+    remain = max(0.0, (cap - ram["rss_gb"]) * (1024**3))
+    # take a fraction of remaining budget so one expand cannot OOM
+    extra = int(0.28 * remain / per)
+    extra = max(0, extra)
+    extra = min(extra, 25_000, int(brain.config.autonomy.max_neurons) - n)
+    if extra < 512 and remain > 0.4 * (1024**3):
+        extra = min(4096, int(brain.config.autonomy.max_neurons) - n)
+    return max(0, extra)
 
 
 def _append_journal(save_path: Path, report: dict[str, Any]) -> None:
