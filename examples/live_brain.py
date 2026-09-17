@@ -94,7 +94,7 @@ def main() -> int:
     if args.until_limit:
         print("Läuft bis an die Speichergrenze des Rechners — speichert nach jedem Zyklus.\n")
     elif args.forever:
-        print("Läuft weiter bis Ctrl+C — speichert nach jedem Zyklus.\n")
+        print("Läuft weiter bis Stopp oder der Rechner ausgeht — speichert nach jedem Zyklus.\n")
     reports = continuum.run(
         cycles=args.cycles,
         forever=args.forever,

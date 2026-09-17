@@ -118,12 +118,13 @@ class Continuum:
         out: list[dict[str, Any]] = []
         i = 0
         try:
-            if until_limit:
+            if until_limit or forever:
                 return self.run_until_limit(
                     seeds=seed_list,
                     pages=pages,
                     ram_cap_gb=ram_cap_gb,
                     ram_floor_gb=ram_floor_gb,
+                    stop_at_limit=bool(until_limit) and not forever,
                 )
             while forever or i < int(cycles):
                 out.append(self.cycle(seed_list, pages=pages))
@@ -139,8 +140,9 @@ class Continuum:
         ram_cap_gb: float | None = None,
         ram_floor_gb: float = 2.5,
         max_cycles: int = 10_000,
+        stop_at_limit: bool = True,
     ) -> list[dict[str, Any]]:
-        """Learn and grow this same brain until RAM/disk are nearly exhausted."""
+        """Learn and grow. If stop_at_limit is False, keep looping without growing when RAM is tight."""
         vm = psutil.virtual_memory()
         total_gb = vm.total / (1024**3)
         cap = float(ram_cap_gb) if ram_cap_gb is not None else min(total_gb * 0.62, total_gb - float(ram_floor_gb) - 1.5)
@@ -151,17 +153,20 @@ class Continuum:
         )
         seed_list = list(seeds or DEFAULT_SEEDS)
         out: list[dict[str, Any]] = []
+        mode = "bis Stopp/Shutdown" if not stop_at_limit else "bis RAM-Limit"
+        n_loops = 10**12 if not stop_at_limit else int(max_cycles)
         print(
-            f"Limit-Lauf: RAM {total_gb:.1f} GB total, cap {cap:.1f} GB RSS, "
+            f"Lauf ({mode}): RAM {total_gb:.1f} GB total, cap {cap:.1f} GB RSS, "
             f"floor {floor:.1f} GB frei. Speichert nach jedem Zyklus.",
             flush=True,
         )
         try:
-            for i in range(int(max_cycles)):
+            for i in range(n_loops):
                 ram = _ram()
                 disk_free = shutil.disk_usage(str(self.brain.live_path or Path.home())).free / (1024**3)
                 reason = _limit_reason(ram, cap, floor, disk_free, self.brain.net.n, self.brain.config.autonomy.max_neurons)
-                if reason:
+                extra = 0 if reason else _grow_chunk(self.brain, ram, cap)
+                if reason and stop_at_limit:
                     self.brain.checkpoint()
                     print(f"LIMIT_REACHED: {reason}", flush=True)
                     print(
@@ -170,22 +175,29 @@ class Continuum:
                         flush=True,
                     )
                     break
-                extra = _grow_chunk(self.brain, ram, cap)
+                if reason and not stop_at_limit:
+                    print(f"HOLD_GROWTH: {reason} — weiter lernen ohne neue Neuronen", flush=True)
                 self.brain.config.autonomy.grow_neurons = extra
                 try:
-                    report = self.cycle(seed_list, pages=pages or 1, grow=True)
+                    report = self.cycle(seed_list, pages=pages or 1, grow=bool(extra))
                 except (MemoryError, RuntimeError) as exc:
                     try:
                         self.brain.checkpoint()
                     except Exception:
                         pass
-                    print(f"LIMIT_REACHED: allocation_failed {type(exc).__name__}: {exc}", flush=True)
-                    break
+                    if stop_at_limit:
+                        print(f"LIMIT_REACHED: allocation_failed {type(exc).__name__}: {exc}", flush=True)
+                        break
+                    print(f"HOLD_GROWTH: allocation_failed {type(exc).__name__} — retry", flush=True)
+                    time.sleep(5)
+                    continue
                 ram2 = _ram()
                 report["rss_gb"] = ram2["rss_gb"]
                 report["available_gb"] = ram2["available_gb"]
                 report["ram_cap_gb"] = cap
                 out.append(report)
+                if not stop_at_limit and len(out) > 32:
+                    out = out[-16:]
                 print(
                     f"Zyklus {report['cycle']}: N {report['neurons']:,}  syn {report['synapses']:,}  "
                     f"konzepte {report['concepts']}  +{report['grown']}N  "
@@ -197,7 +209,7 @@ class Continuum:
                 print("LIMIT_REACHED: max_cycles", flush=True)
         except KeyboardInterrupt:
             self.brain.checkpoint()
-            print("LIMIT_REACHED: interrupted_saved", flush=True)
+            print("STOPPED: interrupted_saved", flush=True)
         return out
 
 
