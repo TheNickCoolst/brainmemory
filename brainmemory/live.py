@@ -77,7 +77,7 @@ class Continuum:
             "concepts": len(brain.encoder.sdrs),
         }
         learned = self.learner.wander(topics, steps=n_pages)
-        rehearsal = brain.rehearse(sample=12)
+        rehearsal = brain.rehearse(sample=24)
         brain.sleep()
         grown = {"added": 0}
         every = max(1, int(auto.grow_every_cycles))
@@ -240,7 +240,8 @@ def _grow_chunk(brain: Brain, ram: dict[str, float], cap: float) -> int:
     # take a fraction of remaining budget so one expand cannot OOM
     extra = int(0.28 * remain / per)
     extra = max(0, extra)
-    extra = min(extra, 25_000, int(brain.config.autonomy.max_neurons) - n)
+    chunk_cap = 12_000 if getattr(brain, "device", None) is not None and str(brain.device).startswith("mps") else 25_000
+    extra = min(extra, chunk_cap, int(brain.config.autonomy.max_neurons) - n)
     if extra < 512 and remain > 0.4 * (1024**3):
         extra = min(4096, int(brain.config.autonomy.max_neurons) - n)
     return max(0, extra)
