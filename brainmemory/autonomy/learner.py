@@ -26,8 +26,10 @@ class AutonomousLearner:
     ):
         self.brain = brain
         self.config = config or brain.config.autonomy
-        self.seen_docs: set[str] = set()
-        self.seen_queries: set[str] = set()
+        if not hasattr(brain, "seen_docs"):
+            brain.seen_docs = set()
+        if not hasattr(brain, "seen_queries"):
+            brain.seen_queries = set()
         if senses is not None:
             self.sense = CompositeSense(senses) if len(senses) > 1 else senses[0]
         else:
@@ -41,16 +43,16 @@ class AutonomousLearner:
     def forage(self, topic: str) -> dict[str, Any]:
         """Fetch one topic and learn novel chunks."""
         docs = self.sense.search(topic, limit=max(1, self.config.follow_links))
-        self.seen_queries.add(topic.lower().strip())
+        self.brain.seen_queries.add(topic.lower().strip())
         learned = []
         skipped = 0
         follow: list[str] = []
         for doc in docs:
             key = doc.title.lower().strip()
-            if key in self.seen_docs:
+            if key in self.brain.seen_docs:
                 skipped += 1
                 continue
-            self.seen_docs.add(key)
+            self.brain.seen_docs.add(key)
             stats = self._ingest_document(doc)
             learned.extend(stats["episodes"])
             skipped += stats["skipped"]
@@ -76,19 +78,19 @@ class AutonomousLearner:
         sleeps: list[dict[str, Any]] = []
         while queue and pages < n_steps:
             topic = queue.popleft()
-            if topic.lower().strip() in self.seen_queries:
+            if topic.lower().strip() in self.brain.seen_queries:
                 continue
             result = self.forage(topic)
             pages += 1
             learned_eps += int(result["episodes_learned"])
             log.append(result)
             for nxt in result.get("follow") or []:
-                if nxt.lower().strip() not in self.seen_queries and nxt.lower().strip() not in self.seen_docs:
+                if nxt.lower().strip() not in self.brain.seen_queries and nxt.lower().strip() not in self.brain.seen_docs:
                     queue.append(nxt)
             if pages % max(1, int(self.config.sleep_every)) == 0:
                 sleeps.append(self.brain.sleep())
             for gap in knowledge_gaps(self.brain, sample=4):
-                if gap.lower().strip() not in self.seen_queries:
+                if gap.lower().strip() not in self.brain.seen_queries:
                     queue.append(gap)
         if learned_eps and (not sleeps or pages % max(1, int(self.config.sleep_every)) != 0):
             sleeps.append(self.brain.sleep())
@@ -121,7 +123,7 @@ class AutonomousLearner:
             stats = self._ingest_document(doc)
             episodes.extend(stats["episodes"])
             skipped += stats["skipped"]
-            self.seen_docs.add(doc.title.lower().strip())
+            self.brain.seen_docs.add(doc.title.lower().strip())
         return {"documents": [d.title for d in docs], "episodes_learned": len(episodes), "skipped": skipped}
 
     def _ingest_document(self, doc: Document) -> dict[str, Any]:

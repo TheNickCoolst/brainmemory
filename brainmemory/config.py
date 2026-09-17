@@ -106,6 +106,10 @@ class AutonomyConfig:
     max_concepts: int = 14
     wikipedia: bool = True
     local_dir: str | None = None
+    grow_every_cycles: int = 1
+    grow_neurons: int = 64
+    max_neurons: int = 200000
+    pages_per_cycle: int = 4
 
 
 @dataclass

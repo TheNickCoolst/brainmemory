@@ -78,3 +78,7 @@ autonomy:
   follow_links: 3
   max_concepts: 14
   wikipedia: true
+  grow_every_cycles: 1
+  grow_neurons: 64
+  max_neurons: 200000
+  pages_per_cycle: 4

@@ -298,6 +298,77 @@ class SparseNetwork:
     def get_neuron(self, idx: int) -> dict:
         return neuron_view(self.state, idx)
 
+    def expand(self, extra: int) -> dict[str, int]:
+        """Append neurons (neurogenesis). Old indices stay valid, so old memories remain."""
+        extra = int(max(0, extra))
+        if extra == 0:
+            return {"added": 0, "neurons": self.n, "synapses": self.syn.nnz}
+        old_n = self.n
+        new_n = old_n + extra
+        rng = self.rng
+        frac = float(self.cfg.inhibitory_fraction)
+        f_h = self.cfg.hippocampus.fraction
+        f_c = self.cfg.cortex.fraction
+        f_a = self.cfg.association.fraction
+        s = f_h + f_c + f_a
+        new_region = rng.choice(
+            np.array([REGION_HIPPOCAMPUS, REGION_CORTEX, REGION_ASSOCIATION], dtype=np.uint8),
+            size=extra,
+            p=[f_h / s, f_c / s, f_a / s],
+        ).astype(np.uint8)
+        new_inh = rng.rand(extra) < frac
+
+        def _pad(t: Tensor, fill, dtype=None) -> Tensor:
+            dt = dtype or t.dtype
+            ext = torch.full((extra,), fill, device=self.device, dtype=dt)
+            return torch.cat([t, ext], dim=0)
+
+        st = self.state
+        thr = float(self.cfg.neuron.v_threshold)
+        st.v = _pad(st.v, 0.0)
+        st.threshold = _pad(st.threshold, thr)
+        st.activation = _pad(st.activation, 0.0)
+        st.refractory = _pad(st.refractory, 0, dtype=torch.int16)
+        st.excitability = _pad(st.excitability, 1.0)
+        st.last_spike_time = _pad(st.last_spike_time, -1.0e9)
+        st.activity_ema = _pad(st.activity_ema, 0.0)
+        st.region = torch.cat(
+            [st.region, torch.from_numpy(new_region).to(device=self.device, dtype=torch.uint8)]
+        )
+        st.is_inhibitory = torch.cat(
+            [st.is_inhibitory, torch.from_numpy(new_inh).to(device=self.device, dtype=torch.bool)]
+        )
+
+        self.region = np.concatenate([self.region, new_region])
+        self.is_inhibitory = np.concatenate([self.is_inhibitory, new_inh])
+        self.n = new_n
+        self.cfg.neurons = new_n
+        self.syn.n = new_n
+        self.syn.keys = set(int(k) for k in pack_keys(self.syn.pre, self.syn.post, new_n))
+        self.cfg.recall.k_wta = max(int(self.cfg.recall.k_wta), int(new_n * 0.06))
+
+        avg = max(8, int(self.cfg.synapses.avg_connections))
+        new_ids = np.arange(old_n, new_n, dtype=np.int64)
+        all_ids = np.arange(new_n, dtype=np.int64)
+        pre = rng.choice(new_ids, size=extra * avg).astype(np.int64)
+        post = rng.choice(all_ids, size=extra * avg).astype(np.int64)
+        back_pre = rng.choice(np.arange(old_n, dtype=np.int64), size=extra * max(4, avg // 4)).astype(np.int64)
+        back_post = rng.choice(new_ids, size=back_pre.size).astype(np.int64)
+        pre = np.concatenate([pre, back_pre])
+        post = np.concatenate([post, back_post])
+        w = np.abs(rng.normal(self.cfg.synapses.w_init_mean, self.cfg.synapses.w_init_std, size=pre.size)).astype(
+            np.float32
+        )
+        sign = np.where(self.is_inhibitory[pre], -1.0, 1.0).astype(np.float32)
+        added = self.syn.add(
+            torch.from_numpy(pre),
+            torch.from_numpy(post),
+            weight=torch.from_numpy(w),
+            sign=torch.from_numpy(sign),
+            t=self.t,
+        )
+        return {"added": extra, "synapses_grown": int(added), "neurons": self.n, "synapses": self.syn.nnz}
+
     def snapshot_state(self) -> dict:
         s = self.state
         return {

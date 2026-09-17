@@ -3,6 +3,7 @@
 from brainmemory.autonomy.learner import AutonomousLearner
 from brainmemory.brain import Brain
 from brainmemory.config import BrainConfig
+from brainmemory.live import Continuum
 
 __version__ = "0.1.0"
-__all__ = ["Brain", "BrainConfig", "AutonomousLearner", "__version__"]
+__all__ = ["Brain", "BrainConfig", "AutonomousLearner", "Continuum", "__version__"]

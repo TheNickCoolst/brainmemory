@@ -108,6 +108,29 @@ Device selection is automatic: **CUDA → MPS → CPU**.
 
 ---
 
+## One lifelong brain
+
+Do **not** train a new network each time. Open the same brain; it keeps its synapses, grows new neurons, and learns the next batch.
+
+```bash
+python examples/live_brain.py              # one cycle, saves ~/.brainmemory/live.pt
+python examples/live_brain.py --cycles 5   # five more cycles on the SAME brain
+python examples/live_brain.py --forever    # until Ctrl+C; saves after every cycle
+python examples/live_brain.py --status     # neurons / synapses / concepts so far
+python examples/live_brain.py --web        # also forage Wikipedia
+```
+
+```python
+from brainmemory import Brain
+
+brain = Brain.live()          # loads ~/.brainmemory/live.pt or creates it once
+brain.explore("hippocampus")
+brain.grow(64)                # neurogenesis: old memories keep their neuron ids
+brain.checkpoint()            # write the same file
+```
+
+Next session: `Brain.live()` again. Same weights. Same engrams. More of both after each cycle.
+
 ## Autonomous learning
 
 The network can fetch its own sensory input, then learn by changing synapses:

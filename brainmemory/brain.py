@@ -6,6 +6,7 @@ Recall is recurrent pattern completion. There is no hidden answer table.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -48,6 +49,15 @@ class Brain:
         self._last_engrams: dict[str, np.ndarray] = {}
         # diagnostic only: maps a label to the last engram neuron ids used for overlap plots
         # NOT consulted by recall()
+        self.seen_docs: set[str] = set()
+        self.seen_queries: set[str] = set()
+        self.live_path: Path | None = None
+        self.life: dict[str, Any] = {
+            "cycles": 0,
+            "episodes_total": 0,
+            "growth_events": 0,
+            "born_neurons": self.net.n,
+        }
 
     # ------------------------------------------------------------------ learn
     def learn(
@@ -177,6 +187,40 @@ class Brain:
 
         return AutonomousLearner(self, **kwargs).ingest_path(path)
 
+    def grow(self, extra: int | None = None) -> dict[str, Any]:
+        """Add neurons to THIS brain. Old memories keep their indices."""
+        extra = int(extra if extra is not None else self.config.autonomy.grow_neurons)
+        cap = int(self.config.autonomy.max_neurons)
+        extra = min(extra, max(0, cap - self.net.n))
+        if extra <= 0:
+            return {"added": 0, "neurons": self.net.n, "synapses": self.net.syn.nnz, "capped": True}
+        stats = self.net.expand(extra)
+        self._sync_anatomy()
+        self.life["growth_events"] = int(self.life.get("growth_events", 0)) + 1
+        return stats
+
+    def rehearse(self, sample: int = 12) -> dict[str, Any]:
+        """Retrieval practice: recall known concepts so synapses deepen."""
+        concepts = [c for c in self.encoder.known_concepts() if " " not in c and len(c) >= 4]
+        if not concepts:
+            return {"rehearsed": 0}
+        rng = self.net.rng
+        k = min(int(sample), len(concepts))
+        idx = np.atleast_1d(rng.choice(len(concepts), size=k, replace=False))
+        pick = [concepts[int(i)] for i in idx]
+        conf = []
+        for c in pick:
+            rec = self.recall([c], top_k=8)
+            conf.append(float(rec.get("confidence", 0.0)))
+        return {"rehearsed": len(pick), "mean_confidence": float(np.mean(conf) if conf else 0.0)}
+
+    def _sync_anatomy(self) -> None:
+        self.encoder.n = self.net.n
+        self.encoder.cortex_pool = self.net.cortex_exc()
+        self.encoder.hippo_pool = self.net.hippo_exc()
+        self.encoder.assoc_pool = self.net.assoc_exc()
+        self.config.neurons = self.net.n
+
     # ----------------------------------------------------------------- recall
     def recall(
         self,
@@ -257,6 +301,9 @@ class Brain:
             "hippocampal_traces": len(self.traces),
             "active_neurons": active,
             "mean_activity_ema": float(self.net.state.activity_ema.mean().item()),
+            "cycles": int(self.life.get("cycles", 0)),
+            "episodes_total": int(self.life.get("episodes_total", 0)),
+            "seen_docs": len(self.seen_docs),
         }
 
     def engram_overlap(self, memory_a: Sequence[str], memory_b: Sequence[str]) -> dict[str, float]:
@@ -288,6 +335,9 @@ class Brain:
             "encoder": self.encoder.state_dict(),
             "traces": self.traces.state_dict(),
             "last_engrams": {k: v.astype(np.int64) for k, v in self._last_engrams.items()},
+            "life": dict(self.life),
+            "seen_docs": sorted(self.seen_docs),
+            "seen_queries": sorted(self.seen_queries),
         }
         torch.save(payload, path)
         return path
@@ -299,8 +349,9 @@ class Brain:
         except TypeError:
             payload = torch.load(Path(path), map_location="cpu")
         cfg = BrainConfig.from_dict(payload["config"])
-        brain = cls(cfg, device=device)
         snap = payload["network"]
+        cfg.neurons = int(np.asarray(snap["region"]).shape[0])
+        brain = cls(cfg, device=device)
         brain.net.t = float(snap["t"])
         brain.net.region = np.asarray(snap["region"], dtype=np.uint8)
         brain.net.is_inhibitory = np.asarray(snap["is_inhibitory"], dtype=np.bool_)
@@ -322,7 +373,30 @@ class Brain:
         brain._last_engrams = {
             k: np.asarray(v, dtype=np.int64) for k, v in payload.get("last_engrams", {}).items()
         }
+        brain.life = dict(payload.get("life") or brain.life)
+        brain.seen_docs = set(payload.get("seen_docs") or [])
+        brain.seen_queries = set(payload.get("seen_queries") or [])
+        brain._sync_anatomy()
         return brain
+
+    @classmethod
+    def live(cls, path: str | Path | None = None, config: BrainConfig | None = None, device: str | None = None) -> "Brain":
+        """Open the one lifelong brain, or create it. Never starts over if the file exists."""
+        dest = Path(path or os.environ.get("BRAINMEMORY_LIVE_PATH") or (Path.home() / ".brainmemory" / "live.pt"))
+        if dest.exists():
+            brain = cls.load(dest, device=device)
+            brain.live_path = dest
+            return brain
+        brain = cls(config or BrainConfig.demo(), device=device)
+        brain.live_path = dest
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        brain.save(dest)
+        return brain
+
+    def checkpoint(self, path: str | Path | None = None) -> Path:
+        dest = Path(path or self.live_path or (Path.home() / ".brainmemory" / "live.pt"))
+        self.live_path = dest
+        return self.save(dest)
 
     # -------------------------------------------------------------- internals
     def _ensemble_for(self, concepts: Sequence[str]) -> np.ndarray:
